@@ -1,6 +1,6 @@
 import logging
-from config import SYMBOLS, TIMEFRAME
-from data import get_exchange_instance, fetch_ohlcv_data
+from config import TIMEFRAME
+from data import get_exchange_instance, fetch_qualified_symbols, fetch_ohlcv_data
 from indicators import calculate_indicators
 from strategy import evaluate_symbol
 from telegram import send_telegram_signal
@@ -12,7 +12,15 @@ def run_single_scan():
     logger.info("Executing scheduled market scan...")
     exchange = get_exchange_instance()
 
-    for symbol in SYMBOLS:
+    # 1. Dynamically scan markets for coins meeting $300M Vol & $100M OI requirements
+    symbols = fetch_qualified_symbols(exchange)
+    
+    if not symbols:
+        logger.info("No trading pairs currently meet the Volume/OI criteria.")
+        return
+
+    # 2. Run signal strategy evaluation on all qualified coins
+    for symbol in symbols:
         try:
             df = fetch_ohlcv_data(exchange, symbol, TIMEFRAME)
             if df.empty:
@@ -25,7 +33,7 @@ def run_single_scan():
                 logger.info(f"Signal found for {symbol}: {signal['side']}")
                 send_telegram_signal(signal)
             else:
-                logger.info(f"No signal for {symbol}")
+                logger.info(f"No strategy signal for {symbol}")
                 
         except Exception as e:
             logger.error(f"Error scanning {symbol}: {e}")
