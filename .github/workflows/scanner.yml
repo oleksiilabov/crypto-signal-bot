@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4.2.2  # Updated to latest patch
+        uses: actions/checkout@v4  # Updated to latest patch
 
       - name: Set up Python
-        uses: actions/setup-python@v5.4.0  # Updated to latest patch
+        uses: actions/setup-python@v5  # Updated to latest patch
         with:
           python-version: '3.11'
 
