@@ -1,51 +1,80 @@
+"""
+Core Application Entry Point.
+Main orchestrator scanning asset universe and routing notifications.
+"""
+
 import logging
-from config import TIMEFRAME
-from data import get_exchange_instance, fetch_qualified_symbols, fetch_ohlcv_data
-from biko_strategy import detect_trendline_breakout
-from telegram import send_telegram_signal
+import sys
+from config import ASSETS_TO_SCAN, StrategyConfig, TelegramConfig
+from data_fetcher import DataFetcher
+from strategy import EMABreakoutStrategy
+from risk import RiskEngine
+from telegram_notifier import TelegramNotifier
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("QuantScanner")
 
-def run_biko_bot():
-    logger = logging.getLogger(__name__)
-    logger.info("Executing BikoTrading Strategy Market Scan...")
-    
-    exchange = get_exchange_instance()
-    
-    # 1. Fetch high liquidity pairs ($300M Vol & $100M OI)
-    symbols = fetch_qualified_symbols(exchange)
-    
-    if not symbols:
-        logger.info("No trading pairs currently meet liquidity criteria.")
-        return
 
-    # 2. Scan pairs for Biko Breakouts
-    for symbol in symbols:
+def run_scanner() -> None:
+    """Executes market scanner pipeline across configured asset registry."""
+    logger.info("Initializing Quant Scanner Run Cycle...")
+
+    strategy_config = StrategyConfig()
+    telegram_config = TelegramConfig()
+
+    fetcher = DataFetcher()
+    strategy = EMABreakoutStrategy(config=strategy_config)
+    notifier = TelegramNotifier(config=telegram_config)
+
+    for symbol, meta in ASSETS_TO_SCAN.items():
+        asset_name = meta["name"]
+        asset_type = meta["type"]
+        platform = meta["platform"]
+
         try:
-            df = fetch_ohlcv_data(exchange, symbol, TIMEFRAME)
+            df = fetcher.fetch_ohlcv(
+                symbol=symbol,
+                period=strategy_config.lookback_period,
+                interval=strategy_config.interval
+            )
+
             if df.empty:
                 continue
-                
-            signal = detect_trendline_breakout(df, TIMEFRAME)
-            
-            if signal:
-                logger.info(f"🎯 Biko Signal found for {symbol}: {signal['side']}")
-                # Format signal payload for Telegram
-                payload = {
-                    "symbol": symbol,
-                    "side": signal["side"],
-                    "confidence": 85.0,  # High confidence due to volume surge
-                    "close": signal["entry"],
-                    "tp": signal["take_profit"],
-                    "sl": signal["stop_loss"],
-                    "rr": signal["risk_reward"]
-                }
-                send_telegram_signal(payload)
-            else:
-                logger.info(f"No Biko breakout signal for {symbol}")
-                
-        except Exception as e:
-            logger.error(f"Error scanning {symbol}: {e}")
+
+            signal = strategy.analyze(df)
+            if not signal:
+                logger.debug(f"No signal detected for pair: {asset_name}")
+                continue
+
+            logger.info(f"SIGNAL TRIGGERED: {asset_name} ({signal.direction})")
+
+            risk_params = RiskEngine.calculate_trade_levels(
+                asset_type=asset_type,
+                asset_name=asset_name,
+                direction=signal.direction,
+                entry_price=signal.entry_price,
+                recent_extreme=signal.recent_extreme,
+                risk_reward_ratio=strategy_config.risk_reward_ratio
+            )
+
+            notifier.send_signal_alert(
+                asset_name=asset_name,
+                asset_type=asset_type,
+                platform=platform,
+                direction=signal.direction,
+                risk_params=risk_params,
+                volume_ratio=signal.volume_ratio
+            )
+
+        except Exception as err:
+            logger.error(f"Unexpected error processing symbol {symbol}: {err}", exc_info=True)
+
+    logger.info("Scanner Run Cycle complete.")
+
 
 if __name__ == "__main__":
-    run_biko_bot()
+    run_scanner()
