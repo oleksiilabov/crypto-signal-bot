@@ -1,27 +1,53 @@
+"""
+Configuration Management Module.
+Loads environment variables and exposes typed parameters for strategy execution.
+"""
+
 import os
+from dataclasses import dataclass, field
+from typing import Dict, Any
 
-# Telegram Settings
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Exchange Settings
-EXCHANGE_ID = "bitget"
-TIMEFRAME = "4h"
-CANDLE_LIMIT = 250
+@dataclass(frozen=True)
+class StrategyConfig:
+    """Trading strategy tunable parameters."""
+    lookback_period: str = os.getenv("LOOKBACK_PERIOD", "5d")
+    interval: str = os.getenv("INTERVAL", "15m")
+    volume_multiplier: float = float(os.getenv("VOLUME_MULT", "1.5"))
+    ema_fast: int = int(os.getenv("EMA_FAST", "20"))
+    ema_slow: int = int(os.getenv("EMA_SLOW", "50"))
+    risk_reward_ratio: float = float(os.getenv("RISK_REWARD_RATIO", "2.0"))
 
-# Market Liquidity Filters (in USD)
-MIN_24H_VOLUME_USD = 300_000_000     # $300M 24h volume
-MIN_OPEN_INTEREST_USD = 100_000_000  # $100M Open Interest
 
-# Strategy Thresholds
-MIN_CONFIDENCE_THRESHOLD = 65.0
-MIN_RISK_REWARD = 2.0
+@dataclass(frozen=True)
+class TelegramConfig:
+    """Telegram Bot Credentials."""
+    bot_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    chat_id: str = field(default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID", ""))
 
-# Indicator Weights
-WEIGHTS = {
-    "ema_trend": 25,
-    "macd": 25,
-    "rsi": 20,
-    "volume": 20,
-    "atr_volatility": 10
+    def validate(self) -> None:
+        """Validates that necessary Telegram tokens exist."""
+        if not self.bot_token or not self.chat_id:
+            raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set.")
+
+
+# Asset Registry Mapping
+ASSETS_TO_SCAN: Dict[str, Dict[str, Any]] = {
+    # FOREX MAJORS
+    "EURUSD=X": {"name": "EUR/USD", "type": "FOREX", "platform": "Interactive Brokers (IBKR)"},
+    "GBPUSD=X": {"name": "GBP/USD", "type": "FOREX", "platform": "Interactive Brokers (IBKR)"},
+    "USDJPY=X": {"name": "USD/JPY", "type": "FOREX", "platform": "Interactive Brokers (IBKR)"},
+    "AUDUSD=X": {"name": "AUD/USD", "type": "FOREX", "platform": "Interactive Brokers (IBKR)"},
+    
+    # MAJOR CRYPTO & ALTCOINS
+    "BTC-USD":  {"name": "BTC/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "ETH-USD":  {"name": "ETH/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "SOL-USD":  {"name": "SOL/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "XRP-USD":  {"name": "XRP/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "ADA-USD":  {"name": "ADA/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "AVAX-USD": {"name": "AVAX/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "LINK-USD": {"name": "LINK/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "DOGE-USD": {"name": "DOGE/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "NEAR-USD": {"name": "NEAR/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
+    "SUI-USD":  {"name": "SUI/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"}
 }
