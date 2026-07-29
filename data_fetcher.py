@@ -1,71 +1,63 @@
-import ccxt
-import pandas as pd
+"""
+Market Data Ingestion Module.
+Retrieves and validates market historical OHLCV data.
+"""
+
 import logging
-from config import CANDLE_LIMIT, MIN_24H_VOLUME_USD, MIN_OPEN_INTEREST_USD
+import pandas as pd
+import yfinance as yf
+from requests import Session
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 logger = logging.getLogger(__name__)
 
-def get_exchange_instance():
-    return ccxt.bitget({
-        'enableRateLimit': True,
-        'timeout': 30000,
-        'options': {'defaultType': 'swap'}  # USDT Futures
-    })
 
-def fetch_qualified_symbols(exchange) -> list:
-    """Dynamically fetches Bitget USDT futures pairs that satisfy Volume and Open Interest filters."""
-    logger.info("Scanning Bitget market for high-volume / high-OI pairs...")
-    qualified_symbols = []
-    
-    try:
-        # 1. Load markets and fetch 24h tickers
-        markets = exchange.load_markets()
-        tickers = exchange.fetch_tickers()
-        
-        for symbol, ticker in tickers.items():
-            # Focus on USDT Perpetual Futures
-            if not symbol.endswith(":USDT"):
-                continue
-                
-            # Check 24h USD Quote Volume
-            quote_volume = ticker.get('quoteVolume', 0) or 0
-            if quote_volume < MIN_24H_VOLUME_USD:
-                continue
+class DataFetcher:
+    """Handles data extraction with resilient HTTP sessions."""
 
-            # Fetch Open Interest for candidates meeting volume requirements
-            try:
-                oi_data = exchange.fetch_open_interest(symbol)
-                # Open interest value in USD (openInterestAmount * lastPrice or oiValue)
-                open_interest_usd = oi_data.get('openInterestValue')
-                if open_interest_usd is None:
-                    oi_contracts = oi_data.get('openInterestAmount', 0) or 0
-                    last_price = ticker.get('last', 0) or 0
-                    open_interest_usd = oi_contracts * last_price
-                
-                if open_interest_usd >= MIN_OPEN_INTEREST_USD:
-                    logger.info(
-                        f"✅ Qualified: {symbol} | "
-                        f"24h Vol: ${quote_volume/1e6:.1f}M | "
-                        f"OI: ${open_interest_usd/1e6:.1f}M"
-                    )
-                    qualified_symbols.append(symbol)
-                    
-            except Exception as e:
-                logger.warning(f"Could not fetch Open Interest for {symbol}: {e}")
-                continue
+    def __init__(self, retries: int = 3, backoff_factor: float = 0.5):
+        self.session = Session()
+        retry_strategy = Retry(
+            total=retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
-    except Exception as e:
-        logger.error(f"Error fetching market tickers: {e}")
-        
-    logger.info(f"Market scan complete. Found {len(qualified_symbols)} qualified pair(s).")
-    return qualified_symbols
+    def fetch_ohlcv(self, symbol: str, period: str = "5d", interval: str = "15m") -> pd.DataFrame:
+        """
+        Fetches historical data for a given ticker symbol.
+        """
+        try:
+            logger.info(f"Fetching market data for {symbol} ({interval} / {period})...")
+            df = yf.download(
+                tickers=symbol,
+                period=period,
+                interval=interval,
+                progress=False,
+                session=self.session
+            )
 
-def fetch_ohlcv_data(exchange, symbol: str, timeframe: str) -> pd.DataFrame:
-    try:
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=CANDLE_LIMIT)
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        return df
-    except Exception as e:
-        logger.error(f"Error fetching data for {symbol}: {e}")
-        return pd.DataFrame()
+            if df.empty or len(df) < 50:
+                logger.warning(f"Insufficient OHLCV data returned for ticker: {symbol}")
+                return pd.DataFrame()
+
+            # Flatten MultiIndex columns if present
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            # Standardize column naming
+            required_cols = {"Open", "High", "Low", "Close", "Volume"}
+            if not required_cols.issubset(df.columns):
+                logger.error(f"Missing required columns in dataset for {symbol}: {df.columns}")
+                return pd.DataFrame()
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Unhandled exception fetching data for {symbol}: {e}", exc_info=True)
+            return pd.DataFrame()
