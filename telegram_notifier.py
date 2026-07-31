@@ -1,82 +1,67 @@
 """
-Telegram Alert Dispatcher.
-Formats and transmits technical signals to designated Telegram chat.
+Telegram Notification Module.
+Formats and dispatches trade signal alerts to Telegram.
 """
 
 import logging
+import os
 import requests
-from config import TelegramConfig
-from risk import TradeParameters
+from strategy import SignalResult
 
 logger = logging.getLogger(__name__)
 
 
 class TelegramNotifier:
-    """Service class for transmitting alerts."""
+    """Handles sending formatted signal messages to a Telegram chat."""
 
-    def __init__(self, config: TelegramConfig = TelegramConfig()):
-        self.config = config
+    def __init__(self):
+        self.token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
-    def send_signal_alert(
-        self,
-        asset_name: str,
-        asset_type: str,
-        platform: str,
-        direction: str,
-        risk_params: TradeParameters,
-        volume_ratio: float
-    ) -> bool:
-        """Formats and transmits signal payload."""
-        try:
-            self.config.validate()
-        except ValueError as err:
-            logger.error(f"Telegram Notification aborted: {err}")
+    def send_signal(self, symbol: str, signal: SignalResult) -> bool:
+        """Formats signal metrics and posts to Telegram."""
+        if not self.token or not self.chat_id:
+            logger.error("Telegram Notification aborted: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set.")
             return False
 
-        tag_icon = "🔵" if asset_type == "FOREX" else "🟡"
-        direction_icon = "📈" if direction == "LONG" else "📉"
-
-        if asset_type == "FOREX":
-            sl_info = (
-                f"🛑 *Stop Loss:* `{risk_params.stop_loss}` ({risk_params.sl_pips} pips)\n"
-                f"🎯 *Take Profit:* `{risk_params.take_profit}` ({risk_params.tp_pips} pips)"
-            )
+        # Risk Management Calculations (Risk-to-Reward 1:2)
+        entry = signal.entry_price
+        stop_loss = signal.recent_extreme
+        
+        if signal.direction == "LONG":
+            risk = entry - stop_loss
+            take_profit = round(entry + (risk * 2.0), 5)
         else:
-            sl_info = (
-                f"🛑 *Stop Loss:* `{risk_params.stop_loss}`\n"
-                f"🎯 *Take Profit:* `{risk_params.take_profit}`"
-            )
+            risk = stop_loss - entry
+            take_profit = round(entry - (risk * 2.0), 5)
 
-        platform_short = platform.split(" ")[0]
-        message = (
-            f"{tag_icon} *[{asset_type} SIGNAL]*\n"
-            f"*Pair:* `{asset_name}`\n"
-            f"{direction_icon} *Direction:* `{direction} / {'BUY' if direction == 'LONG' else 'SELL'}`\n"
-            f"🏦 *Platform:* {platform}\n"
-            f"───────────────\n"
-            f"📍 *Entry:* `{risk_params.entry_price:.{risk_params.decimals}f}`\n"
-            f"{sl_info}\n"
-            f"⚖️ *Risk/Reward:* 1:{risk_params.risk_reward_ratio}\n"
-            f"📊 *Volume Spike:* {volume_ratio}x baseline\n"
-            f"───────────────\n"
-            f"📲 _Execute trade on {platform_short}_"
+        # Formatted Markdown Message with Grade & Probability
+        msg = (
+            f"🚨 *TRADE ALERT: {symbol} ({signal.direction})*\n\n"
+            f"📊 *Signal Grade:* `{signal.signal_grade}`\n"
+            f"🎯 *Est. Win Rate:* `{signal.est_win_probability}`\n\n"
+            f"💵 *Entry Price:* `{entry}`\n"
+            f"🛑 *Stop Loss:* `{stop_loss}`\n"
+            f"🎯 *Take Profit (1:2):* `{take_profit}`\n\n"
+            f"📈 *RSI (14):* `{signal.rsi_val}`\n"
+            f"🔊 *Volume Ratio:* `{signal.volume_ratio}x`"
         )
 
-        url = f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {
-            "chat_id": self.config.chat_id,
-            "text": message,
+            "chat_id": self.chat_id,
+            "text": msg,
             "parse_mode": "Markdown"
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code == 200:
-                logger.info(f"Successfully transmitted signal for {asset_name}")
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code == 200:
+                logger.info(f"Successfully sent Telegram alert for {symbol}")
                 return True
             else:
-                logger.error(f"Telegram API responded with code {response.status_code}: {response.text}")
+                logger.error(f"Telegram API error {res.status_code}: {res.text}")
                 return False
         except Exception as e:
-            logger.error(f"Failed to post alert to Telegram: {e}", exc_info=True)
+            logger.error(f"Failed to send Telegram message: {e}")
             return False
