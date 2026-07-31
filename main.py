@@ -36,7 +36,7 @@ def run_scanner() -> None:
         platform = meta["platform"]
 
         try:
-           df_15m = fetcher.fetch_ohlcv(
+            df_15m = fetcher.fetch_ohlcv(
                 symbol=symbol,
                 period=strategy_config.lookback_period,
                 interval=strategy_config.interval
