@@ -5,10 +5,9 @@ Main orchestrator scanning asset universe and routing notifications.
 
 import logging
 import sys
-from config import ASSETS_TO_SCAN, StrategyConfig, TelegramConfig
+from config import ASSETS_TO_SCAN, StrategyConfig
 from data_fetcher import DataFetcher
 from strategy import EMABreakoutStrategy
-from risk import RiskEngine
 from telegram_notifier import TelegramNotifier
 
 logging.basicConfig(
@@ -24,11 +23,11 @@ def run_scanner() -> None:
     logger.info("Initializing Quant Scanner Run Cycle...")
 
     strategy_config = StrategyConfig()
-    telegram_config = TelegramConfig()
 
     fetcher = DataFetcher()
     strategy = EMABreakoutStrategy(config=strategy_config)
-notifier = TelegramNotifier()
+    notifier = TelegramNotifier()
+
     for symbol, meta in ASSETS_TO_SCAN.items():
         asset_name = meta["name"]
         asset_type = meta["type"]
@@ -56,7 +55,6 @@ notifier = TelegramNotifier()
 
             logger.info(f"SIGNAL TRIGGERED: {asset_name} ({signal.direction})")
 
-           
             notifier.send_signal(
                 symbol=asset_name,
                 signal=signal
