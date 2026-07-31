@@ -57,15 +57,7 @@ def run_scanner() -> None:
 
             logger.info(f"SIGNAL TRIGGERED: {asset_name} ({signal.direction})")
 
-            risk_params = RiskEngine.calculate_trade_levels(
-                asset_type=asset_type,
-                asset_name=asset_name,
-                direction=signal.direction,
-                entry_price=signal.entry_price,
-                recent_extreme=signal.recent_extreme,
-                risk_reward_ratio=strategy_config.risk_reward_ratio
-            )
-
+           
             notifier.send_signal(
                 symbol=asset_name,
                 signal=signal
