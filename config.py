@@ -49,5 +49,5 @@ ASSETS_TO_SCAN: Dict[str, Dict[str, Any]] = {
     "LINK-USD": {"name": "LINK/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
     "DOGE-USD": {"name": "DOGE/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
     "NEAR-USD": {"name": "NEAR/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"},
-    "SUI-USD":  {"name": "SUI/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"}
+    "SUI1-USD":  {"name": "SUI1/USD", "type": "CRYPTO", "platform": "Bitget (Futures / Spot)"}
 }
