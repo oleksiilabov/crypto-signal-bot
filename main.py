@@ -36,16 +36,21 @@ def run_scanner() -> None:
         platform = meta["platform"]
 
         try:
-            df = fetcher.fetch_ohlcv(
+           df_15m = fetcher.fetch_ohlcv(
                 symbol=symbol,
                 period=strategy_config.lookback_period,
                 interval=strategy_config.interval
             )
+            df_4h = fetcher.fetch_ohlcv(
+                symbol=symbol,
+                period="60d",
+                interval="4h"
+            )
 
-            if df.empty:
+            if df_15m.empty:
                 continue
 
-            signal = strategy.analyze(df)
+            signal = strategy.analyze(df_15m, df_4h)
             if not signal:
                 logger.debug(f"No signal detected for pair: {asset_name}")
                 continue
