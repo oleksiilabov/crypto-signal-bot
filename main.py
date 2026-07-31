@@ -28,8 +28,7 @@ def run_scanner() -> None:
 
     fetcher = DataFetcher()
     strategy = EMABreakoutStrategy(config=strategy_config)
-    notifier = TelegramNotifier(config=telegram_config)
-
+notifier = TelegramNotifier()
     for symbol, meta in ASSETS_TO_SCAN.items():
         asset_name = meta["name"]
         asset_type = meta["type"]
