@@ -66,13 +66,9 @@ def run_scanner() -> None:
                 risk_reward_ratio=strategy_config.risk_reward_ratio
             )
 
-            notifier.send_signal_alert(
-                asset_name=asset_name,
-                asset_type=asset_type,
-                platform=platform,
-                direction=signal.direction,
-                risk_params=risk_params,
-                volume_ratio=signal.volume_ratio
+            notifier.send_signal(
+                symbol=asset_name,
+                signal=signal
             )
 
         except Exception as err:
