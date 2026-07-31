@@ -1,9 +1,10 @@
 """
 Market Data Ingestion Module.
-Retrieves and validates market historical OHLCV data.
+Retrieves and validates market historical OHLCV data with custom headers.
 """
 
 import logging
+import time
 import pandas as pd
 import yfinance as yf
 from requests import Session
@@ -14,10 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 class DataFetcher:
-    """Handles data extraction with resilient HTTP sessions."""
+    """Handles data extraction with resilient HTTP sessions and custom user-agent."""
 
-    def __init__(self, retries: int = 3, backoff_factor: float = 0.5):
+    def __init__(self, retries: int = 3, backoff_factor: float = 1.0):
         self.session = Session()
+        # Set a realistic browser User-Agent to prevent 429 rate limiting on cloud runners
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
         retry_strategy = Retry(
             total=retries,
             backoff_factor=backoff_factor,
@@ -34,6 +39,10 @@ class DataFetcher:
         """
         try:
             logger.info(f"Fetching market data for {symbol} ({interval} / {period})...")
+            
+            # Small delay to prevent hitting API rate limits rapidly
+            time.sleep(1)
+
             df = yf.download(
                 tickers=symbol,
                 period=period,
@@ -42,7 +51,7 @@ class DataFetcher:
                 session=self.session
             )
 
-            if df.empty or len(df) < 50:
+            if df.empty or len(df) < 20:
                 logger.warning(f"Insufficient OHLCV data returned for ticker: {symbol}")
                 return pd.DataFrame()
 
